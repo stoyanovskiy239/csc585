@@ -18,6 +18,5 @@ def make_model(model_specs):
 def rank_features(model, ft_names):
     ft_importances = model.feature_importances_
     indices = np.argsort(ft_importances)[::-1]
-    ft_ranking = [(ft_names[indices[i]], ft_importances[indices[i]])
-                  for i in range(len(ft_names))]
+    ft_ranking = [(ft_names[i], ft_importances[i]) for i in indices]
     return ft_ranking
