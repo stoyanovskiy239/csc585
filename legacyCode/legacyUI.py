@@ -14,6 +14,10 @@ from PyQt5.QtWidgets import *
 class TweakerWidget(QWidget):
     HEADERS = {'Content-type': 'application/json',
                'Accept': 'application/json'}
+    TABLE_STYLE = '''QTableCornerButton::section{
+                        border-width: 1px; 
+                        border-color: #BABABA; 
+                        border-style:solid;}'''
 
     def __init__(self):
         super(TweakerWidget, self).__init__()
@@ -22,6 +26,7 @@ class TweakerWidget(QWidget):
                             ''.join(random.choices(
                                 string.ascii_letters + string.digits, k=20)),
                             '.json'])
+        self.csv_header = None
         self.init_ui()
 
     def init_ui(self):
@@ -31,6 +36,7 @@ class TweakerWidget(QWidget):
 
         # Empty Table
         self.table = QTableWidget(1, 1, self)
+        self.table.setStyleSheet(self.TABLE_STYLE)
 
         # Import CSV Button
         import_btn = QPushButton('Импорт CSV', self)
@@ -49,6 +55,12 @@ class TweakerWidget(QWidget):
         self.plot_btn.setEnabled(False)
         self.plot_btn.clicked.connect(self.run_query)
 
+        # self.test_btn = QPushButton('test', self)
+        # self.test_btn.resize(self.plot_btn.sizeHint())
+        # self.test_btn.clicked.connect(self.test)
+        # self.test_status = QLabel(self)
+        # self.test_status.setText('ничего')
+
         # Upload Status Label
         self.upload_status = QLabel(self)
         self.upload_status.setText('Статус: нет данных')
@@ -58,8 +70,10 @@ class TweakerWidget(QWidget):
         self.json_status.setText('')
         self.json_status.setAlignment(Qt.AlignCenter)
 
-        # Text Field
-        self.query_text = QPlainTextEdit(self)
+        # Group Selector
+        self.selector = QTableWidget(1, 3, self)
+        self.selector.setHorizontalHeaderLabels(['Фактор', 'Группа', 'Шаг'])
+        self.selector.verticalHeader().hide()
 
         # Query Results
         self.result = QTabWidget(self)
@@ -71,34 +85,41 @@ class TweakerWidget(QWidget):
         self.grid.addWidget(self.upload_btn, 0, 1)
         self.grid.addWidget(self.upload_status, 0, 2)
         self.grid.addWidget(self.table, 1, 0, 5, 3)
-        self.grid.addWidget(self.query_text, 4, 3, 2, 4)
+        self.grid.addWidget(self.selector, 4, 3, 2, 4)
         self.grid.addWidget(self.json_status, 5, 7, 1, 2)
         self.grid.addWidget(self.plot_btn, 4, 7, 1, 2)
+        # self.grid.addWidget(self.test_status, 5, 7, 1, 2)
+        # self.grid.addWidget(self.test_btn, 4, 7, 1, 2)
         self.grid.addWidget(self.result, 0, 3, 4, 6)
 
         self.show()
+
+    # def test(self):
+    #     self.test_status.setText(str(self.selector.itemAt(0, 0).text()))
 
     def import_csv(self):
         file_path = QFileDialog.getOpenFileName(caption='Upload CSV',
                                                 directory='~',
                                                 filter='CSV files (*.csv)')[0]
         if file_path:
+            self.table.setSortingEnabled(False)
             with open(file_path, newline='') as fp:
                 dialect = csv.Sniffer().sniff(fp.read(1024))
                 fp.seek(0)
                 reader = csv.reader(fp, dialect)
-                header = next(reader)
-                json_buffer = dict(zip(header, [dict() for _ in header]))
-                self.table.setColumnCount(len(header))
-                for i, label in enumerate(header):
-                    self.table.setItem(0, i, QTableWidgetItem(label))
+                self.csv_header = next(reader)
+                json_buffer = dict(zip(self.csv_header,
+                                       [dict() for _ in self.csv_header]))
+                self.table.setColumnCount(len(self.csv_header))
+                self.table.setHorizontalHeaderLabels(self.csv_header)
                 for i, row in enumerate(reader):
-                    self.table.setRowCount(i + 2)
+                    self.table.setRowCount(i + 1)
                     for j, val in enumerate(row):
-                        json_buffer[header[j]][str(i)] = val
-                        self.table.setItem(i + 1, j, QTableWidgetItem(val))
-            self.table.resizeColumnsToContents()
+                        json_buffer[self.csv_header[j]][str(i)] = val
+                        self.table.setItem(i, j, QTableWidgetItem(val))
+            self.table.setSortingEnabled(True)
             self.table.resizeRowsToContents()
+            self.table.resizeColumnsToContents()
             self.json_buffer = json.dumps(json_buffer)
             self.upload_btn.setEnabled(True)
             self.upload_status.setText('Статус: данные готовы к загрузке')
@@ -114,13 +135,12 @@ class TweakerWidget(QWidget):
                 self.json_status.setText('Статус: ожидается запрос')
                 self.plot_btn.setEnabled(True)
                 self.upload_btn.setEnabled(False)
-                self.query_text.setPlainText('''{
-                "target":"y",
-                "groups":{
-                    "group1":{"x1": 5,"x3": -2},
-                    "group2":{"x5": -3,"x8": 1}
-                    }
-                }''')
+                self.selector.setSortingEnabled(False)
+                self.selector.setRowCount(len(self.csv_header))
+                for i, label in enumerate(self.csv_header):
+                    self.selector.setItem(i, 0, QTableWidgetItem(label))
+                    self.selector.setCellWidget(i, 1, QComboBox(self.selector))
+                self.selector.setSortingEnabled(True)
             else:
                 self.upload_status.setText(
                     f'Статус: ошибка {response.status_code}')
@@ -129,7 +149,7 @@ class TweakerWidget(QWidget):
 
     def run_query(self):
         try:
-            query = json.dumps(json.loads(self.query_text.toPlainText()))
+            # !!!
             response = requests.get(self.uri,
                                     json=query,
                                     headers=self.HEADERS)
@@ -146,16 +166,8 @@ class TweakerWidget(QWidget):
                     plot = QLabel(tabs[-1])
                     plot.setPixmap(pixmap)
                     plot.setAlignment(Qt.AlignCenter)
-                    table = QTableWidget(1, len(cmb['pred']), self)
-                    for j, y in enumerate(cmb['pred']):
-                        table.setItem(0, j, QTableWidgetItem(y))
-                    table.setSizeAdjustPolicy(
-                        QAbstractScrollArea.AdjustToContents)
-                    table.resizeRowsToContents()
-                    table.resizeColumnsToContents()
                     layout = QGridLayout()
                     layout.addWidget(plot, 0, 0)
-                    layout.addWidget(table, 1, 0)
                     tabs[-1].setLayout(layout)
                     self.result.setTabText(i, str(i + 1))
             else:
